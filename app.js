@@ -170,87 +170,219 @@ function toast(msg) {
   toast.h = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-/* ================= Persistência & Sincronização ================= */
-let lastSyncJSON = '';
-let syncDisabled = false;
+/* ================= Supabase Realtime & Offline-First Engine ================= */
+const SUPABASE_URL = 'https://liytnqmkiaphenyzmluw.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxpeXRucW1raWFwaGVueXptbHV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2MDk1MjgsImV4cCI6MjEwODE4NTUyOH0.Af4cELQvUX7lMWeKGTxXlvbiKXYTwZPWP0qpTCOZSBg';
+
+let isSyncing = false;
+let outboxQueue = JSON.parse(localStorage.getItem('patrimonio_outbox') || '[]');
+
+function updateSyncStatus(status, text) {
+  const el = $('#sync-badge');
+  if (!el) return;
+  el.className = `sync-badge ${status}`;
+  el.innerHTML = text;
+}
+
+function persistOutbox() {
+  localStorage.setItem('patrimonio_outbox', JSON.stringify(outboxQueue));
+}
+
+function queueOutbox(action) {
+  outboxQueue.push(action);
+  persistOutbox();
+  updateSyncStatus('offline', `🟡 Salvo no celular (${outboxQueue.length} na fila)`);
+}
 
 const save = (syncRemote = true) => {
-  const str = JSON.stringify(S);
-  localStorage.setItem(KEY, str);
-  if (syncRemote && !syncDisabled) {
-    lastSyncJSON = str;
-    fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: str
-    }).catch(() => { syncDisabled = true; });
+  localStorage.setItem(KEY, JSON.stringify(S));
+  if (syncRemote) {
+    syncWithSupabase();
   }
 };
 
-async function syncFromServer() {
-  if (syncDisabled) return;
-  try {
-    const res = await fetch('/api/state');
-    if (!res.ok) {
-      if (res.status === 404) syncDisabled = true; // Ambiente estático (Vercel)
-      return;
-    }
-    const remote = await res.json();
-    if (!remote || !remote.st) {
-      if (Object.keys(S.st).length > 0) save(true);
-      return;
-    }
-    const remoteStr = JSON.stringify(remote);
-    if (remoteStr === lastSyncJSON) return;
+async function pushConfToSupabase(payload) {
+  const url = `${SUPABASE_URL}/rest/v1/conferencia?on_conflict=tombamento`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates'
+    },
+    body: JSON.stringify([payload])
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp;
+}
 
-    let changed = false;
-    for (const [t, data] of Object.entries(remote.st || {})) {
-      if (!S.st[t] || (data.ts && (!S.st[t].ts || data.ts > S.st[t].ts))) {
-        S.st[t] = data;
-        changed = true;
+async function pushSobraToSupabase(payload) {
+  const url = `${SUPABASE_URL}/rest/v1/sobras?on_conflict=id`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates'
+    },
+    body: JSON.stringify([payload])
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp;
+}
+
+async function syncWithSupabase() {
+  if (isSyncing) return;
+  isSyncing = true;
+
+  try {
+    // 1. Descarrega fila pendente (outbox) gerada enquanto estava offline
+    if (outboxQueue.length > 0) {
+      updateSyncStatus('syncing', `🔄 Enviando ${outboxQueue.length}...`);
+      const copy = [...outboxQueue];
+      for (const item of copy) {
+        if (item.type === 'conf') {
+          await pushConfToSupabase(item.data);
+        } else if (item.type === 'sobra') {
+          await pushSobraToSupabase(item.data);
+        } else if (item.type === 'del_conf') {
+          await fetch(`${SUPABASE_URL}/rest/v1/conferencia?tombamento=eq.${item.t}`, {
+            method: 'DELETE',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          });
+        } else if (item.type === 'del_sobra') {
+          await fetch(`${SUPABASE_URL}/rest/v1/sobras?id=eq.${item.id}`, {
+            method: 'DELETE',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          });
+        }
+        outboxQueue.shift();
+        persistOutbox();
       }
     }
-    if (Array.isArray(remote.extras)) {
-      const existingIds = new Set(S.extras.map(x => x.id));
-      for (const ex of remote.extras) {
-        if (!existingIds.has(ex.id)) {
-          S.extras.push(ex);
-          changed = true;
+
+    // 2. Puxa conferências da nuvem feitas por outros funcionários
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/conferencia?select=*`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      }
+    });
+
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        updateSyncStatus('error', '⚠️ Permissão SQL pendente');
+      } else {
+        updateSyncStatus('offline', '🟡 Aguardando sinal...');
+      }
+      return;
+    }
+
+    const cloudRows = await res.json();
+    let localChanged = false;
+
+    if (Array.isArray(cloudRows)) {
+      for (const row of cloudRows) {
+        const t = row.tombamento;
+        const cloudTs = Number(row.ts) || 0;
+        const localTs = Number(S.st[t]?.ts) || 0;
+
+        if (!S.st[t] || cloudTs > localTs) {
+          S.st[t] = {
+            s: row.status,
+            loc: row.local || '',
+            obs: row.obs || '',
+            resp: row.responsavel || '',
+            ts: cloudTs
+          };
+          localChanged = true;
         }
       }
     }
-    if (remote.resp && !S.resp) { S.resp = remote.resp; changed = true; }
-    if (remote.inst && !S.inst) { S.inst = remote.inst; changed = true; }
-    if (changed) {
-      lastSyncJSON = JSON.stringify(S);
-      localStorage.setItem(KEY, lastSyncJSON);
+
+    // 3. Puxa sobras da nuvem
+    const resSobras = await fetch(`${SUPABASE_URL}/rest/v1/sobras?select=*`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      }
+    });
+    if (resSobras.ok) {
+      const cloudSobras = await resSobras.json();
+      if (Array.isArray(cloudSobras)) {
+        const localIds = new Set(S.extras.map(e => String(e.id)));
+        for (const cs of cloudSobras) {
+          if (!localIds.has(String(cs.id))) {
+            S.extras.push({
+              id: cs.id,
+              t: cs.tombamento || '',
+              n: cs.descricao,
+              q: cs.qtd || 1,
+              loc: cs.local || '',
+              obs: cs.obs || ''
+            });
+            localChanged = true;
+          }
+        }
+      }
+    }
+
+    if (localChanged) {
+      localStorage.setItem(KEY, JSON.stringify(S));
       const activeTag = (document.activeElement?.tagName || '').toLowerCase();
       if (activeTag !== 'input' && activeTag !== 'textarea') {
         refresh();
       }
     }
-  } catch (e) {
-    syncDisabled = true;
+
+    if (outboxQueue.length === 0) {
+      updateSyncStatus('live', '🟢 Nuvem Ativa');
+    }
+  } catch (err) {
+    if (outboxQueue.length > 0) {
+      updateSyncStatus('offline', `🟡 Salvo no celular (${outboxQueue.length} na fila)`);
+    } else {
+      updateSyncStatus('live', '🟢 Salvo no Celular');
+    }
+  } finally {
+    isSyncing = false;
   }
 }
-setInterval(syncFromServer, 5000);
-setTimeout(syncFromServer, 400);
 
-// Suporte a teclado virtual no celular
-window.addEventListener('focusin', e => {
-  const t = (e.target?.tagName || '').toLowerCase();
-  if (t === 'input' || t === 'textarea' || t === 'select') {
-    document.body.classList.add('keyboard-open');
-  }
-});
-window.addEventListener('focusout', () => {
-  document.body.classList.remove('keyboard-open');
-});
+setInterval(syncWithSupabase, 3500);
+setTimeout(syncWithSupabase, 300);
+window.addEventListener('focus', syncWithSupabase);
+window.addEventListener('online', syncWithSupabase);
 
 function setStatus(t, s, extra = {}) {
-  if (s === 'P') delete S.st[t];
-  else S.st[t] = { ...(S.st[t] || {}), s, ts: Date.now(), ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== undefined)) };
-  save();
+  const ts = Date.now();
+  if (s === 'P') {
+    delete S.st[t];
+    save(false);
+    fetch(`${SUPABASE_URL}/rest/v1/conferencia?tombamento=eq.${t}`, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    }).catch(() => { queueOutbox({ type: 'del_conf', t }); });
+  } else {
+    S.st[t] = { ...(S.st[t] || {}), s, ts, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== undefined)) };
+    save(false);
+
+    const payload = {
+      tombamento: t,
+      status: s,
+      local: S.st[t]?.loc || S.loc || '',
+      obs: S.st[t]?.obs || '',
+      responsavel: S.resp || '',
+      ts
+    };
+    pushConfToSupabase(payload).then(() => {
+      updateSyncStatus('live', '🟢 Nuvem Ativa');
+    }).catch(() => {
+      queueOutbox({ type: 'conf', data: payload });
+    });
+  }
 }
 
 /* ================= Navegação ================= */
@@ -941,20 +1073,35 @@ $('#qrprint').onclick = () => {
 $('#fsob').onsubmit = e => {
   e.preventDefault();
   vibrate(50);
-  S.extras.push({
+  const newSobra = {
     id: Date.now(),
     t: $('#s-t').value.trim(),
     n: $('#s-n').value.trim(),
     q: Math.max(1, +$('#s-q').value || 1),
     loc: $('#s-l').value.trim(),
     obs: $('#s-o').value.trim()
-  });
-  save();
+  };
+  S.extras.push(newSobra);
+  save(false);
   e.target.reset();
   $('#s-q').value = 1;
   $('#s-l').value = S.loc;
   refresh();
   toast('➕ Adicionado à Tabela 2');
+
+  const sobraPayload = {
+    id: newSobra.id,
+    tombamento: newSobra.t,
+    descricao: newSobra.n,
+    qtd: newSobra.q,
+    local: newSobra.loc,
+    obs: newSobra.obs,
+    responsavel: S.resp || '',
+    ts: Date.now()
+  };
+  pushSobraToSupabase(sobraPayload).catch(() => {
+    queueOutbox({ type: 'sobra', data: sobraPayload });
+  });
 };
 
 function sobras() {
@@ -1005,9 +1152,14 @@ document.addEventListener('click', e => {
   if (!b) return;
   vibrate(40);
   if (!confirm('Remover este item?')) return;
-  S.extras = S.extras.filter(x => x.id != b.dataset.x);
-  save();
+  const id = b.dataset.x;
+  S.extras = S.extras.filter(x => x.id != id);
+  save(false);
   refresh();
+  fetch(`${SUPABASE_URL}/rest/v1/sobras?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+  }).catch(() => { queueOutbox({ type: 'del_sobra', id }); });
 });
 
 /* ================= Relatórios ================= */
@@ -1130,6 +1282,22 @@ function refresh() {
   mini();
   ({ dash, conf, etq, sobras, rel })[view]();
 }
+
+/* ================= Conectar Celular / Compartilhar Equipe ================= */
+function openMobileConnect() {
+  const dlg = $('#mobiledlg');
+  const targetUrl = window.location.href;
+  const q = qrcode(0, 'M');
+  q.addData(targetUrl);
+  q.make();
+  $('#mobile-qr-img').src = q.createDataURL(6, 12);
+  const linkEl = $('#mobile-link');
+  linkEl.href = targetUrl;
+  linkEl.textContent = targetUrl;
+  dlg.showModal();
+}
+const btnMob = $('#btn-mobile-connect');
+if (btnMob) btnMob.onclick = openMobileConnect;
 
 renderMode();
 
