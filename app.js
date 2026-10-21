@@ -24,34 +24,87 @@ const hhmm = ts => new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', m
 
 document.documentElement.dataset.theme = S.theme;
 
-/* ================= Áudio e Vibração Tátil ================= */
+/* ================= Áudio Profissional do Leitor de Código de Barras ================= */
 let actx;
 function unlockAudio() {
   if (!actx) {
-    try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) actx = new AudioCtx();
+    } catch(e) {}
   }
   if (actx && actx.state === 'suspended') {
-    actx.resume();
+    actx.resume().catch(() => {});
   }
 }
-window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
-window.addEventListener('click', unlockAudio, { once: true, passive: true });
+window.addEventListener('touchstart', unlockAudio, { passive: true });
+window.addEventListener('click', unlockAudio, { passive: true });
 
-function beep(freq, duration = 0.1) {
+function playScanSound(type = 'success') {
   try {
     unlockAudio();
     if (!actx) return;
-    const osc = actx.createOscillator();
-    const gain = actx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, actx.currentTime);
-    gain.gain.setValueAtTime(0.08, actx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + duration);
-    osc.connect(gain);
-    gain.connect(actx.destination);
-    osc.start();
-    osc.stop(actx.currentTime + duration);
-  } catch (e) {}
+    const now = actx.currentTime;
+
+    if (type === 'success') {
+      // BIP PROFISSIONAL DE SCANNER (dois tons harmônicos nítidos: 1850Hz -> 2500Hz)
+      const osc1 = actx.createOscillator();
+      const osc2 = actx.createOscillator();
+      const gain = actx.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(1850, now);
+      osc1.frequency.exponentialRampToValueAtTime(2500, now + 0.04);
+
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(2500, now + 0.04);
+
+      gain.gain.setValueAtTime(0.44, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(actx.destination);
+
+      osc1.start(now);
+      osc1.stop(now + 0.04);
+      osc2.start(now + 0.04);
+      osc2.stop(now + 0.13);
+    } else if (type === 'duplicate') {
+      // Duplo bip para avisar que já foi conferido
+      [0, 0.09].forEach(delay => {
+        const osc = actx.createOscillator();
+        const gain = actx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(750, now + delay);
+        gain.gain.setValueAtTime(0.32, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.06);
+        osc.connect(gain);
+        gain.connect(actx.destination);
+        osc.start(now + delay);
+        osc.stop(now + delay + 0.06);
+      });
+    } else if (type === 'error') {
+      // Tom grave de erro para item não cadastrado
+      const osc = actx.createOscillator();
+      const gain = actx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(230, now);
+      osc.frequency.linearRampToValueAtTime(160, now + 0.22);
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      osc.connect(gain);
+      gain.connect(actx.destination);
+      osc.start(now);
+      osc.stop(now + 0.22);
+    }
+  } catch (e) {
+    console.warn('Audio play error:', e);
+  }
+}
+
+function beep(freq, duration = 0.1) {
+  playScanSound('success');
 }
 
 function vibrate(pattern = 50) {
@@ -477,20 +530,66 @@ function addLog(t, k) {
   save();
 }
 
+function triggerScanFlash(type = 'ok') {
+  const flash = $('#scanner-flash');
+  if (!flash) return;
+  flash.className = `scanner-flash active flash-${type}`;
+  clearTimeout(triggerScanFlash.h);
+  triggerScanFlash.h = setTimeout(() => {
+    flash.className = 'scanner-flash';
+  }, 420);
+}
+
+function showCamScannedCard(data) {
+  const c = $('#cam-scanned-card');
+  if (!c) return;
+  $('#csc-badge').className = `scanned-badge ${data.cls}`;
+  $('#csc-badge').textContent = data.status;
+  $('#csc-tno').textContent = data.tno;
+  $('#csc-time').textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  $('#csc-title').textContent = data.title;
+  $('#csc-desc').textContent = data.desc;
+  $('#csc-loc').innerHTML = `📍 ${esc(data.loc)}`;
+  $('#csc-val').innerHTML = `💰 ${esc(data.val)}`;
+  
+  c.className = `cam-scanned-card border-${data.cls}`;
+  c.style.display = 'flex';
+}
+
 function processCode(raw) {
   const t = parseCode(raw);
   if (!t) {
-    beep(200, 0.2);
+    playScanSound('error');
     vibrate([100, 50, 100]);
+    triggerScanFlash('er');
+    showCamScannedCard({
+      status: 'CÓDIGO INVÁLIDO',
+      tno: esc(raw),
+      title: 'Código Não Reconhecido',
+      desc: 'O número lido não possui formato válido de patrimônio.',
+      loc: S.loc || 'Não definida',
+      val: '—',
+      cls: 'er'
+    });
     return { cls: 'er', html: `Código não reconhecido: <b>${esc(raw)}</b>` };
   }
   const it = BYT[t];
   if (!it) {
-    beep(220, 0.25);
+    playScanSound('error');
     vibrate([120, 60, 120]);
     addLog(t, 'X');
     lastT = null;
     lastMissing = t;
+    triggerScanFlash('er');
+    showCamScannedCard({
+      status: 'FORA DO TERMO',
+      tno: t,
+      title: 'Não Consta no Termo de Guarda',
+      desc: 'Este bem foi encontrado mas não consta no documento nº 000387/2026. Registre em Sobras.',
+      loc: S.loc || 'Não definida',
+      val: '—',
+      cls: 'er'
+    });
     refresh();
     return { cls: 'er', html: `❌ <b>${t}</b> NÃO consta no termo. Registre em <b>Sobras</b>.` };
   }
@@ -498,17 +597,37 @@ function processCode(raw) {
   lastT = t;
   const prev = stOf(it);
   if (prev === 'L' || prev === 'I') {
-    beep(340, 0.15);
+    playScanSound('duplicate');
     vibrate([80, 50, 80]);
     addLog(t, 'D');
+    triggerScanFlash('wr');
+    showCamScannedCard({
+      status: `REPETIDO: ${LAB[prev].slice(2).toUpperCase()}`,
+      tno: t,
+      title: it.n,
+      desc: it.e,
+      loc: S.st[t]?.loc || S.loc || 'Não definida',
+      val: brl(it.v),
+      cls: 'wr'
+    });
     refresh();
     return { cls: 'wr', html: `🔁 <b>${t}</b> — ${esc(it.n)}<br>já estava como ${LAB[prev]}` };
   }
 
   setStatus(t, S.mode, { loc: S.loc || undefined });
   addLog(t, S.mode);
-  beep(880, 0.12);
-  vibrate([50, 30, 80]);
+  playScanSound('success');
+  vibrate([60, 30, 90]);
+  triggerScanFlash('ok');
+  showCamScannedCard({
+    status: S.mode === 'L' ? '✅ LOCALIZADO' : '⚠️ INSERVÍVEL',
+    tno: t,
+    title: it.n,
+    desc: it.e,
+    loc: S.loc || 'Sala atual não informada',
+    val: brl(it.v),
+    cls: 'ok'
+  });
   refresh();
   return {
     cls: 'ok',
@@ -565,7 +684,7 @@ function renderLast() {
     return;
   }
   const i = BYT[lastT], s = stOf(i), d = S.st[i.t] || {};
-  el.className = 'last ' + (s === 'L' ? 'ok' : s === 'P' ? '' : s === 'I' ? 'wr' : 'er');
+  el.className = 'last just-scanned ' + (s === 'L' ? 'ok' : s === 'P' ? '' : s === 'I' ? 'wr' : 'er');
   el.innerHTML = `<div class="lt">
     <div>
       <span class="tno">${i.t}</span>
@@ -609,7 +728,9 @@ async function openCam() {
   camSession = 0;
   $('#camcount').textContent = '';
   $('#cam-scan-input').value = '';
-  camFeed('Aponte para o código de barras ou QR Code da plaqueta.');
+  const popCard = $('#cam-scanned-card');
+  if (popCard) popCard.style.display = 'none';
+  camFeed('Aponte a câmera para o código de barras ou QR Code da plaqueta.');
   $('#camdlg').showModal();
 
   if (!window.Html5Qrcode) {
@@ -650,7 +771,7 @@ async function startCam(id) {
 
 function onCode(text) {
   const now = Date.now();
-  if (text === lastCode && now - lastTime < 2800) return;
+  if (text === lastCode && now - lastTime < 2400) return;
   lastCode = text;
   lastTime = now;
 
@@ -659,6 +780,8 @@ function onCode(text) {
   if (r.cls === 'ok') {
     camSession++;
     $('#camcount').textContent = `🎯 ${camSession} item(ns) conferido(s) nesta sessão`;
+    const counterEl = $('#csc-session');
+    if (counterEl) counterEl.textContent = `Item #${camSession} nesta sessão`;
   }
 }
 
