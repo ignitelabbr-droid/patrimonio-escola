@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0f1f">
+<title>Conferência de Patrimônio – EMEIEF Matilde Guerra Comério</title>
+<meta name="description" content="Conferência, análise e relatórios do patrimônio escolar com leitura de QR Code e etiquetas.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg no-print"></div>
+
+<div class="app no-print">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">🏫</div>
+      <div><h1>Patrimônio</h1><p>EMEIEF Matilde G. Comério</p></div>
+    </div>
+    <nav id="tabs">
+      <button data-view="dash" class="active" id="tab-dash"><i>📊</i><span>Painel</span></button>
+      <button data-view="conf" id="tab-conf"><i>✅</i><span>Conferência</span></button>
+      <button data-view="etq" id="tab-etq"><i>🏷️</i><span>Etiquetas</span></button>
+      <button data-view="sobras" id="tab-sobras"><i>➕</i><span>Sobras</span><b class="pill" id="cnt-sobras">0</b></button>
+      <button data-view="rel" id="tab-rel"><i>🖨️</i><span>Relatórios</span></button>
+    </nav>
+    <div class="side-foot">
+      <div class="mini">
+        <div class="mini-top"><span>Progresso</span><b id="mini-pct">0%</b></div>
+        <div class="mini-bar"><div id="mini-fill"></div></div>
+        <small id="mini-txt"></small>
+      </div>
+      <p class="termo">Termo nº 000387/2026<br>Sec. Mun. de Educação · Colatina-ES</p>
+    </div>
+  </aside>
+
+  <main>
+    <header class="pagehead">
+      <div><h2 id="ptitle">Painel</h2><p id="psub"></p></div>
+      <div class="head-actions">
+        <button class="btn icon" id="theme" title="Alternar tema claro/escuro">🌓</button>
+        <button class="btn accent glow" id="btn-mobile-connect">📱 Conectar Celular</button>
+        <button class="btn primary" id="quick-cam">📷 Câmera</button>
+      </div>
+    </header>
+
+    <!-- PAINEL -->
+    <section id="view-dash" class="view active">
+      <div class="kpis" id="kpis"></div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-h"><h3>Progresso da conferência</h3></div>
+          <div class="ringwrap">
+            <div class="ring" id="ring"><div><span id="ringtxt">0%</span><small>conferido</small></div></div>
+            <ul class="legend" id="legend"></ul>
+          </div>
+        </div>
+        <div class="card"><div class="card-h"><h3>💡 Alertas e insights</h3></div><ul class="insights" id="insights"></ul></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><div class="card-h"><h3>Por tipo de bem</h3><span class="muted">top 12</span></div><div id="bycat" class="bars"></div></div>
+        <div class="card">
+          <div class="card-h"><h3>Por década de aquisição</h3></div><div id="bydec" class="bars"></div>
+          <div class="card-h mt"><h3>Por local (sala)</h3></div><div id="byloc" class="bars"></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-h"><h3>Maiores valores ainda pendentes</h3></div><div class="tablewrap"><table id="toppend" class="rt"></table></div></div>
+    </section>
+
+    <!-- CONFERÊNCIA -->
+    <section id="view-conf" class="view">
+      <div class="conf-grid">
+        <div class="card scan-card">
+          <div class="scan-header-row">
+            <label for="scan" class="lbl"><b>⌨️ Digitar número ou bipar plaqueta:</b></label>
+            <span class="muted" style="font-size:12px">Ex: digite <b>105024</b> ou <b>000105024</b> e clique em <b>Dar Baixa</b></span>
+          </div>
+          <div class="scan-input">
+            <span class="scan-ico">🔢</span>
+            <input id="scan" type="text" inputmode="numeric" placeholder="Digite o nº do patrimônio (ex: 105024)" autocomplete="off">
+            <button class="btn primary glow" id="btn-submit-scan" type="button">⚡ Dar Baixa</button>
+            <button class="btn" id="cam-btn" type="button">📷 Câmera</button>
+          </div>
+          <div class="scanrow">
+            <div class="field grow"><label for="curloc">📍 Local atual (sala)</label>
+              <input id="curloc" list="locs" placeholder="Ex.: Sala 3, Cozinha, Secretaria…"><datalist id="locs"></datalist></div>
+            <div class="field"><label>Ao ler/digitar, marcar como</label>
+              <div class="seg" data-mode-seg><button data-m="L">✅ Localizado</button><button data-m="I">⚠️ Inservível</button></div></div>
+          </div>
+          <div id="last" class="last"></div>
+        </div>
+        <div class="card log-card">
+          <div class="card-h"><h3>Últimas leituras</h3><button class="btn sm ghost" id="clearlog">Limpar</button></div>
+          <ul id="log" class="log"></ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="filters">
+          <input id="q" type="search" placeholder="🔎 Buscar por tombamento, nome, descrição, local…">
+          <select id="fstatus">
+            <option value="">Todos os status</option><option value="P">⏳ Pendentes</option>
+            <option value="L">✅ Localizados</option><option value="I">⚠️ Inservíveis</option><option value="N">❌ Não localizados</option>
+          </select>
+          <select id="fcat"><option value="">Todos os tipos</option></select>
+          <select id="fsort"><option value="t">Ordem: tombamento</option><option value="n">Ordem: nome</option><option value="vd">Maior valor</option><option value="d">Mais antigos</option><option value="r">Conferidos recentemente</option></select>
+        </div>
+        <div class="bulk">
+          <span id="resinfo"></span>
+          <div class="actions">
+            <button class="btn sm" data-bulk="L">✅ Filtrados → localizados</button>
+            <button class="btn sm" data-bulk="N">❌ Pendentes filtrados → não localizados</button>
+            <button class="btn sm ghost" data-bulk="P">↺ Limpar filtrados</button>
+          </div>
+        </div>
+        <div class="tablewrap tall"><table id="tbl" class="rt"></table></div>
+        <button class="btn center" id="more" hidden>Mostrar mais</button>
+      </div>
+    </section>
+
+    <!-- ETIQUETAS -->
+    <section id="view-etq" class="view">
+      <div class="card">
+        <div class="filters">
+          <input id="eq" type="search" placeholder="🔎 Filtrar por tombamento ou nome…">
+          <select id="ecat"><option value="">Todos os tipos</option></select>
+          <select id="estatus">
+            <option value="">Todos os status</option><option value="P">⏳ Pendentes</option>
+            <option value="L">✅ Localizados</option><option value="I">⚠️ Inservíveis</option><option value="N">❌ Não localizados</option>
+          </select>
+          <input id="efrom" class="sm-in" inputmode="numeric" placeholder="De nº">
+          <input id="eto" class="sm-in" inputmode="numeric" placeholder="Até nº">
+        </div>
+        <div class="filters mt">
+          <select id="esize">
+            <option value="3">Grande · 3 por linha</option>
+            <option value="4" selected>Média · 4 por linha</option>
+            <option value="5">Pequena · 5 por linha</option>
+          </select>
+          <label class="chk"><input type="checkbox" id="edesc" checked> Mostrar nome do bem</label>
+          <label class="chk"><input type="checkbox" id="einst" checked> Mostrar nome da escola</label>
+        </div>
+        <div class="bulk">
+          <span id="einfo"></span>
+          <button class="btn primary" id="eprint">🖨️ Imprimir etiquetas</button>
+        </div>
+        <div class="tip">💡 Imprima em papel adesivo (A4), recorte e cole nos bens. Depois, na <b>Conferência</b>, use <b>📷 Câmera</b> para ler: cada leitura dá baixa no item na hora. O leitor também lê o <b>código de barras</b> das plaquetas.</div>
+        <div id="epreview" class="labels screen"></div>
+      </div>
+    </section>
+
+    <!-- SOBRAS -->
+    <section id="view-sobras" class="view">
+      <div class="card">
+        <form id="fsob" class="formgrid">
+          <div class="field"><label for="s-t">Nº tombamento / plaqueta</label><input id="s-t" placeholder="se houver"></div>
+          <div class="field grow"><label for="s-n">Descrição do bem *</label><input id="s-n" required placeholder="Ex.: Armário de aço 2 portas"></div>
+          <div class="field xs"><label for="s-q">Qtd</label><input id="s-q" type="number" min="1" value="1"></div>
+          <div class="field"><label for="s-l">Local</label><input id="s-l" list="locs"></div>
+          <div class="field grow"><label for="s-o">Observação</label><input id="s-o"></div>
+          <button class="btn primary" type="submit">➕ Adicionar</button>
+        </form>
+      </div>
+      <div class="card"><div class="tablewrap"><table id="tsob" class="rt"></table></div></div>
+    </section>
+
+    <!-- RELATÓRIOS -->
+    <section id="view-rel" class="view">
+      <div class="card">
+        <div class="card-h"><h3>Dados da conferência</h3></div>
+        <div class="formgrid">
+          <div class="field grow"><label for="r-inst">Instituição</label><input id="r-inst"></div>
+          <div class="field grow"><label for="r-resp">Responsável pela conferência</label><input id="r-resp"></div>
+        </div>
+      </div>
+      <div class="cards3">
+        <div class="card rep"><span class="rep-n">1</span><h3>Tabela 1</h3><p>Bens do Termo de Guarda <b>não localizados</b> na instituição.</p><b class="rep-c" id="rc-t1"></b>
+          <div class="actions"><button class="btn primary" data-print="t1">🖨️ Imprimir</button><button class="btn" data-csv="t1">⬇️ CSV</button></div></div>
+        <div class="card rep"><span class="rep-n">2</span><h3>Tabela 2</h3><p>Bens <b>localizados que não constam</b> no Termo de Guarda.</p><b class="rep-c" id="rc-t2"></b>
+          <div class="actions"><button class="btn primary" data-print="t2">🖨️ Imprimir</button><button class="btn" data-csv="t2">⬇️ CSV</button></div></div>
+        <div class="card rep"><span class="rep-n">3</span><h3>Tabela 3</h3><p>Bens na instituição porém <b>inservíveis</b> (degradados, quebrados, em desuso).</p><b class="rep-c" id="rc-t3"></b>
+          <div class="actions"><button class="btn primary" data-print="t3">🖨️ Imprimir</button><button class="btn" data-csv="t3">⬇️ CSV</button></div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Resumo geral e backup</h3></div>
+        <div class="actions">
+          <button class="btn primary" data-print="resumo">🖨️ Resumo da conferência</button>
+          <button class="btn" data-csv="tudo">⬇️ Planilha completa (CSV)</button>
+          <button class="btn" id="bk">💾 Salvar backup (.json)</button>
+          <label class="btn" for="rs">📂 Restaurar backup</label><input id="rs" type="file" accept=".json" hidden>
+          <button class="btn danger" id="reset">🗑️ Zerar conferência</button>
+        </div>
+        <p class="muted">O progresso fica salvo neste navegador. Faça backup regularmente.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="printarea"></div>
+
+<!-- Editar local/observação -->
+<dialog id="dlg"><form method="dialog">
+  <h3 id="dtitle"></h3>
+  <div class="field"><label for="d-loc">Local</label><input id="d-loc" list="locs"></div>
+  <div class="field"><label for="d-obs">Observação</label><textarea id="d-obs" rows="3"></textarea></div>
+  <div class="actions end"><button class="btn ghost" value="cancel">Cancelar</button><button class="btn primary" value="ok" id="d-ok">Salvar</button></div>
+</form></dialog>
+
+<!-- Câmera -->
+<dialog id="camdlg" class="cam">
+  <div class="card-h"><h3>📷 Leitor de Câmera / Código de Barras</h3><button class="x" id="camclose" title="Fechar">✕</button></div>
+  <div class="reader-wrap"><div id="reader"></div><div class="scanline"></div></div>
+
+  <div class="cam-manual-box">
+    <label for="cam-scan-input" class="lbl"><b>⌨️ Digitar número:</b> se preferir, digite a plaqueta e clique em Dar Baixa:</label>
+    <div class="scan-input compact">
+      <span class="scan-ico">🔢</span>
+      <input id="cam-scan-input" type="text" inputmode="numeric" placeholder="Ex: 105024" autocomplete="off">
+      <button class="btn primary glow sm" id="btn-cam-manual" type="button">⚡ Dar Baixa</button>
+    </div>
+  </div>
+
+  <div class="cam-opts">
+    <select id="camsel" hidden></select>
+    <div class="seg" data-mode-seg><button data-m="L">✅ Localizado</button><button data-m="I">⚠️ Inservível</button></div>
+  </div>
+  <div class="cam-loc">📍 Local: <b id="camloc">—</b> <span class="muted">(altere na tela de Conferência)</span></div>
+  <div id="camfeed" class="feed">Aponte para o código de barras ou QR Code da plaqueta.</div>
+  <div class="cam-count" id="camcount"></div>
+</dialog>
+
+<!-- QR individual -->
+<dialog id="qrdlg">
+  <div class="card-h"><h3 id="qrtitle"></h3><button class="x" onclick="this.closest('dialog').close()">✕</button></div>
+  <div class="qrbig"><img id="qrimg" alt="QR Code do bem"></div>
+  <p id="qrdesc" class="muted center-t"></p>
+  <div class="actions end"><button class="btn primary" id="qrprint">🖨️ Imprimir etiqueta</button></div>
+</dialog>
+
+<!-- Conectar Celular -->
+<dialog id="mobiledlg" class="mobiledlg">
+  <div class="card-h">
+    <h3>📱 Conectar Celular à Conferência</h3>
+    <button class="x" onclick="this.closest('dialog').close()">✕</button>
+  </div>
+  <div class="mobile-body">
+    <div class="qrbig mobile-qr-wrap">
+      <img id="mobile-qr-img" alt="QR Code para conectar celular">
+    </div>
+    <div class="mobile-instructions">
+      <div class="mobile-step">
+        <span class="step-num">1</span>
+        <div><b>Mesmo Wi-Fi:</b> Certifique-se de que o celular está conectado na mesma rede da escola que este computador.</div>
+      </div>
+      <div class="mobile-step">
+        <span class="step-num">2</span>
+        <div><b>Aponte a câmera:</b> Abra a câmera do celular e aponte para o QR Code acima (ou acesse o link abaixo).</div>
+      </div>
+      <div class="mobile-step">
+        <span class="step-num">3</span>
+        <div><b>Liberar Câmera:</b> Se o celular exibir <i>"Sua conexão não é particular"</i>, toque em <b>Avançado</b> e depois em <b>Continuar para o site</b>. Isso é normal em rede interna e liberará a câmera do celular para bipar os patrimônios!</div>
+      </div>
+      <div class="mobile-link-box">
+        <span class="lbl">Link direto para abrir no navegador do celular:</span>
+        <a id="mobile-link" href="#" target="_blank" class="mobile-url"></a>
+      </div>
+    </div>
+  </div>
+  <div class="actions end">
+    <button class="btn primary" onclick="this.closest('dialog').close()">Entendi / Fechar</button>
+  </div>
+</dialog>
+
+<div id="toast"></div>
+
+<script src="lib/html5-qrcode.min.js"></script>
+<script src="lib/qrcode.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
