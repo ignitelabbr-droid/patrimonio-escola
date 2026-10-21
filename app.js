@@ -236,8 +236,40 @@ function dash() {
   if (tm.length) ins.push([`<b>${tm.filter(i => stOf(i) === 'P').length}</b> de ${tm.length} eletrônicos pendentes.`, '#34d399']);
   $('#insights').innerHTML = ins.map(([h, c]) => `<li style="--c:${c}">${h}</li>`).join('');
 
-  $('#toppend').innerHTML = '<tr><th>Tombamento</th><th>Bem</th><th>Aquisição</th><th>Valor</th></tr>' +
-    ITEMS.filter(i => stOf(i) === 'P').sort((a, b) => b.v - a.v).slice(0, 8).map(i => `<tr><td class="t">${i.t}</td><td><b>${esc(i.n)}</b><small>${esc(i.e)}</small></td><td data-l="Aquisição">${i.a || i.d}</td><td class="v" data-l="Valor">${brl(i.v)}</td></tr>`).join('');
+  const topList = ITEMS.filter(i => stOf(i) === 'P').sort((a, b) => b.v - a.v).slice(0, 8);
+  const isMobile = matchMedia('(max-width:900px)').matches;
+  const mTop = $('#m-list-toppend');
+  const tblTop = $('#toppend');
+  if (isMobile) {
+    if (tblTop) tblTop.style.display = 'none';
+    if (mTop) {
+      mTop.style.display = 'flex';
+      mTop.innerHTML = topList.map(i => `
+        <div class="m-item-card" data-t="${i.t}">
+          <div class="m-item-top">
+            <span class="m-tno">${i.t}</span>
+            <span class="badge P">Pendente</span>
+          </div>
+          <div class="m-item-title">${esc(i.n)}</div>
+          <div class="m-item-desc">${esc(i.e)}</div>
+          <div class="m-item-footer">
+            <div class="m-item-info">
+              <span>💰 ${brl(i.v)}</span>
+              ${i.a ? `<span>📅 ${i.a}</span>` : ''}
+            </div>
+            ${actBtns(i.t)}
+          </div>
+        </div>
+      `).join('');
+    }
+  } else {
+    if (mTop) mTop.style.display = 'none';
+    if (tblTop) {
+      tblTop.style.display = 'table';
+      tblTop.innerHTML = '<tr><th>Tombamento</th><th>Bem</th><th>Aquisição</th><th>Valor</th></tr>' +
+        topList.map(i => `<tr><td class="t">${i.t}</td><td><b>${esc(i.n)}</b><small>${esc(i.e)}</small></td><td data-l="Aquisição">${i.a || i.d}</td><td class="v" data-l="Valor">${brl(i.v)}</td></tr>`).join('');
+    }
+  }
 }
 
 function mini() {
@@ -332,11 +364,21 @@ function conf() {
   $('#resinfo').textContent = `${num(r.length)} bens no filtro · ${brl(r.reduce((a, i) => a + i.v, 0))}`;
 
   const isMobile = matchMedia('(max-width:900px)').matches;
+  const tbl = $('#tbl');
+  const mList = $('#m-list-conf');
   if (isMobile) {
-    $('#tbl').innerHTML = show.map(renderMobileCard).join('');
+    if (tbl) tbl.style.display = 'none';
+    if (mList) {
+      mList.style.display = 'flex';
+      mList.innerHTML = show.map(renderMobileCard).join('');
+    }
   } else {
-    $('#tbl').innerHTML = '<tr><th>Tombamento</th><th>Bem</th><th>Aquisição</th><th>Valor</th><th>Status</th><th>Local / Obs.</th><th>Ações</th></tr>' +
-      show.map(renderDesktopRow).join('');
+    if (mList) mList.style.display = 'none';
+    if (tbl) {
+      tbl.style.display = 'table';
+      tbl.innerHTML = '<tr><th>Tombamento</th><th>Bem</th><th>Aquisição</th><th>Valor</th><th>Status</th><th>Local / Obs.</th><th>Ações</th></tr>' +
+        show.map(renderDesktopRow).join('');
+    }
   }
 
   $('#more').hidden = r.length <= limit;
@@ -746,37 +788,47 @@ $('#fsob').onsubmit = e => {
 function sobras() {
   $('#s-l').value ||= S.loc;
   const isMobile = matchMedia('(max-width:900px)').matches;
+  const tbl = $('#tsob');
+  const mList = $('#m-list-sobras');
   if (isMobile) {
-    $('#tsob').innerHTML = S.extras.length ? S.extras.map((x, k) => `
-      <div class="m-item-card">
-        <div class="m-item-top">
-          <span class="m-tno">${esc(x.t) || 'S/ Tombamento'}</span>
-          <span class="badge L">Qtd: ${x.q}</span>
+    if (tbl) tbl.style.display = 'none';
+    if (mList) {
+      mList.style.display = 'flex';
+      mList.innerHTML = S.extras.length ? S.extras.map((x, k) => `
+        <div class="m-item-card">
+          <div class="m-item-top">
+            <span class="m-tno">${esc(x.t) || 'S/ Tombamento'}</span>
+            <span class="badge L">Qtd: ${x.q}</span>
+          </div>
+          <div class="m-item-title">${esc(x.n)}</div>
+          <div class="m-item-meta">
+            ${x.loc ? `<span>📍 ${esc(x.loc)}</span>` : ''}
+            ${x.obs ? `<span>📝 ${esc(x.obs)}</span>` : ''}
+          </div>
+          <div class="m-item-actions">
+            <button data-x="${x.id}" class="btn sm danger" title="Remover">🗑️ Excluir</button>
+          </div>
         </div>
-        <div class="m-item-title">${esc(x.n)}</div>
-        <div class="m-item-meta">
-          ${x.loc ? `<span>📍 ${esc(x.loc)}</span>` : ''}
-          ${x.obs ? `<span>📝 ${esc(x.obs)}</span>` : ''}
-        </div>
-        <div class="m-item-actions">
-          <button data-x="${x.id}" class="btn sm danger" title="Remover">🗑️ Excluir</button>
-        </div>
-      </div>
-    `).join('') : '<div class="muted center-t" style="padding:30px">Nenhum bem extra cadastrado.</div>';
+      `).join('') : '<div class="muted center-t" style="padding:30px">Nenhum bem extra cadastrado.</div>';
+    }
   } else {
-    $('#tsob').innerHTML = '<tr><th>Nº</th><th>Tombamento</th><th>Descrição</th><th>Qtd</th><th>Local</th><th>Observação</th><th></th></tr>' +
-      (S.extras.map((x, k) => `<tr>
-        <td>${k + 1}</td>
-        <td class="t">${esc(x.t) || '—'}</td>
-        <td><b>${esc(x.n)}</b></td>
-        <td>${x.q}</td>
-        <td>${esc(x.loc)}</td>
-        <td>${esc(x.obs)}</td>
-        <td><div class="acts"><button data-x="${x.id}" title="Remover">🗑️</button></div></td>
-      </tr>`).join('') || '<tr><td colspan="7" class="muted center-t" style="padding:24px">Nenhum bem extra registrado.</td></tr>');
+    if (mList) mList.style.display = 'none';
+    if (tbl) {
+      tbl.style.display = 'table';
+      tbl.innerHTML = '<tr><th>Nº</th><th>Tombamento</th><th>Descrição</th><th>Qtd</th><th>Local</th><th>Observação</th><th></th></tr>' +
+        (S.extras.map((x, k) => `<tr>
+          <td>${k + 1}</td>
+          <td class="t">${esc(x.t) || '—'}</td>
+          <td><b>${esc(x.n)}</b></td>
+          <td>${x.q}</td>
+          <td>${esc(x.loc)}</td>
+          <td>${esc(x.obs)}</td>
+          <td><div class="acts"><button data-x="${x.id}" title="Remover">🗑️</button></div></td>
+        </tr>`).join('') || '<tr><td colspan="7" class="muted center-t" style="padding:24px">Nenhum bem extra registrado.</td></tr>');
+    }
   }
 }
-$('#tsob').onclick = e => {
+document.addEventListener('click', e => {
   const b = e.target.closest('button[data-x]');
   if (!b) return;
   vibrate(40);
@@ -784,7 +836,7 @@ $('#tsob').onclick = e => {
   S.extras = S.extras.filter(x => x.id != b.dataset.x);
   save();
   refresh();
-};
+});
 
 /* ================= Relatórios ================= */
 $('#r-inst').value = S.inst;
@@ -912,4 +964,11 @@ renderMode();
 // Se for celular, abre direto na aba de Conferência
 const initialView = matchMedia('(max-width:900px)').matches ? 'conf' : 'dash';
 go(initialView);
+
+// Atualiza renderização ao rotacionar tela
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(refresh, 150);
+});
 })();
