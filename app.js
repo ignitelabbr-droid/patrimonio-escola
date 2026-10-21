@@ -52,12 +52,27 @@ async function syncFromServer() {
     if (changed) {
       lastSyncJSON = JSON.stringify(S);
       localStorage.setItem(KEY, lastSyncJSON);
-      refresh();
+      // Evita reconstruir a tela se o usuário estiver digitando
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      if (activeTag !== 'input' && activeTag !== 'textarea') {
+        refresh();
+      }
     }
   } catch (e) {}
 }
-setInterval(syncFromServer, 3500);
-setTimeout(syncFromServer, 300);
+setInterval(syncFromServer, 4000);
+setTimeout(syncFromServer, 500);
+
+// Controle de teclado virtual no celular
+window.addEventListener('focusin', e => {
+  const t = (e.target?.tagName || '').toLowerCase();
+  if (t === 'input' || t === 'textarea' || t === 'select') {
+    document.body.classList.add('keyboard-open');
+  }
+});
+window.addEventListener('focusout', () => {
+  document.body.classList.remove('keyboard-open');
+});
 const brl = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const num = v => v.toLocaleString('pt-BR');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
