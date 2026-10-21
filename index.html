@@ -6,6 +6,13 @@
 <meta name="theme-color" content="#0a0f1f">
 <title>Conferência de Patrimônio – EMEIEF Matilde Guerra Comério</title>
 <meta name="description" content="Conferência, análise e relatórios do patrimônio escolar com leitura de QR Code e etiquetas.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Patrimônio">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -66,7 +73,7 @@
           <div class="card-h mt"><h3>Por local (sala)</h3></div><div id="byloc" class="bars"></div>
         </div>
       </div>
-      <div class="card"><div class="card-h"><h3>Maiores valores ainda pendentes</h3></div><div class="tablewrap"><table id="toppend" class="rt"></table></div></div>
+      <div class="card"><div class="card-h"><h3>Maiores valores ainda pendentes</h3></div><div class="tablewrap" id="tablewrap-toppend"><table id="toppend" class="rt"></table><div id="m-list-toppend" class="mobile-items-list"></div></div></div>
     </section>
 
     <!-- CONFERÊNCIA -->
@@ -130,7 +137,7 @@
             <button class="btn sm ghost" data-bulk="P">↺ Limpar filtrados</button>
           </div>
         </div>
-        <div class="tablewrap tall"><table id="tbl" class="rt"></table></div>
+        <div class="tablewrap tall" id="tablewrap-main"><table id="tbl" class="rt"></table><div id="m-list-conf" class="mobile-items-list"></div></div>
         <button class="btn center" id="more" hidden>Mostrar mais</button>
       </div>
     </section>
@@ -178,7 +185,7 @@
           <button class="btn primary" type="submit">➕ Adicionar</button>
         </form>
       </div>
-      <div class="card"><div class="tablewrap"><table id="tsob" class="rt"></table></div></div>
+      <div class="card"><div class="tablewrap" id="tablewrap-sobras"><table id="tsob" class="rt"></table><div id="m-list-sobras" class="mobile-items-list"></div></div></div>
     </section>
 
     <!-- RELATÓRIOS -->
@@ -313,9 +320,59 @@
 
 <div id="toast"></div>
 
+<!-- Banner de instalação PWA no celular -->
+<div id="pwa-install-banner" class="pwa-banner" style="display:none">
+  <div class="pwa-banner-content">
+    <img src="icon-192.png" alt="Ícone do App" class="pwa-icon">
+    <div>
+      <b>Instalar Aplicativo</b>
+      <small>Use em tela cheia e 100% offline</small>
+    </div>
+  </div>
+  <div class="pwa-banner-actions">
+    <button class="btn sm primary glow" id="btn-pwa-install">📲 Instalar</button>
+    <button class="btn sm ghost" id="btn-pwa-dismiss">✕</button>
+  </div>
+</div>
+
 <script src="lib/html5-qrcode.min.js"></script>
 <script src="lib/qrcode.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      console.log('PWA ServiceWorker registrado:', reg.scope);
+    }).catch(err => console.log('Erro SW:', err));
+  });
+}
+
+// Banner de instalação PWA nativo
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const banner = document.getElementById('pwa-install-banner');
+  if (banner) banner.style.display = 'flex';
+});
+
+document.addEventListener('click', e => {
+  if (e.target && e.target.id === 'btn-pwa-install') {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(choice => {
+        if (choice.outcome === 'accepted') {
+          console.log('Usuário instalou o PWA');
+        }
+        deferredPrompt = null;
+        document.getElementById('pwa-install-banner').style.display = 'none';
+      });
+    }
+  } else if (e.target && e.target.id === 'btn-pwa-dismiss') {
+    document.getElementById('pwa-install-banner').style.display = 'none';
+  }
+});
+</script>
 </body>
 </html>
