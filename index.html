@@ -242,6 +242,7 @@
 
   <div class="reader-wrap">
     <div id="reader"></div>
+    <div id="scanner-flash" class="scanner-flash"></div>
     <div class="scanner-hud">
       <div class="corner tl"></div>
       <div class="corner tr"></div>
@@ -252,10 +253,28 @@
   </div>
 
   <div class="cam-bottom-panel">
+    <!-- Card de Evidência Imediata do Item Escaneado -->
+    <div id="cam-scanned-card" class="cam-scanned-card" style="display:none">
+      <div class="scanned-card-head">
+        <span class="scanned-badge" id="csc-badge">✅ LOCALIZADO</span>
+        <span class="scanned-tno">PLAQUETA: <b id="csc-tno">000000000</b></span>
+        <span class="scanned-time" id="csc-time">--:--</span>
+      </div>
+      <div class="scanned-card-body">
+        <h4 id="csc-title">Item Conferido</h4>
+        <p id="csc-desc"></p>
+      </div>
+      <div class="scanned-card-footer">
+        <span id="csc-loc">📍 Sala</span>
+        <span id="csc-val">💰 R$ 0,00</span>
+        <span id="csc-session" class="scanned-counter"></span>
+      </div>
+    </div>
+
     <div class="cam-loc-badge">
       <span>📍 Sala atual:</span> <b id="camloc">Não definida</b>
     </div>
-    <div id="camfeed" class="feed">Aponte para o código de barras ou QR Code da plaqueta.</div>
+    <div id="camfeed" class="feed">Aponte a câmera para o código de barras ou QR Code da plaqueta.</div>
     
     <div class="cam-manual-box">
       <div class="scan-input compact">
