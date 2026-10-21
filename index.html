@@ -45,7 +45,13 @@
 
   <main>
     <header class="pagehead">
-      <div><h2 id="ptitle">Painel</h2><p id="psub"></p></div>
+      <div>
+        <div class="title-row">
+          <h2 id="ptitle">Painel</h2>
+          <span id="sync-badge" class="sync-badge live" title="Status da sincronização em tempo real">🟢 Nuvem Ativa</span>
+        </div>
+        <p id="psub"></p>
+      </div>
       <div class="head-actions">
         <button class="btn icon" id="theme" title="Alternar tema claro/escuro">🌓</button>
         <button class="btn accent glow" id="btn-mobile-connect">📱 Conectar Celular</button>
@@ -316,18 +322,18 @@
     <div class="mobile-instructions">
       <div class="mobile-step">
         <span class="step-num">1</span>
-        <div><b>Mesmo Wi-Fi:</b> Certifique-se de que o celular está conectado na mesma rede da escola que este computador.</div>
+        <div><b>Aponte a câmera do celular:</b> Abra o app de câmera do celular e aponte para o QR Code ao lado (ou compartilhe o link abaixo com a equipe).</div>
       </div>
       <div class="mobile-step">
         <span class="step-num">2</span>
-        <div><b>Aponte a câmera:</b> Abra a câmera do celular e aponte para o QR Code acima (ou acesse o link abaixo).</div>
+        <div><b>Sincronização em Tempo Real:</b> Tudo que for bipado nos celulares dos funcionários será salvo instantaneamente no banco de dados na nuvem (Supabase).</div>
       </div>
       <div class="mobile-step">
         <span class="step-num">3</span>
-        <div><b>Liberar Câmera:</b> Se o celular exibir <i>"Sua conexão não é particular"</i>, toque em <b>Avançado</b> e depois em <b>Continuar para o site</b>. Isso é normal em rede interna e liberará a câmera do celular para bipar os patrimônios!</div>
+        <div><b>Instale como App (PWA):</b> No celular, toque no botão <b>📲 Instalar</b> para usar em tela cheia e bipar com rapidez máxima mesmo se o sinal oscilar.</div>
       </div>
       <div class="mobile-link-box">
-        <span class="lbl">Link direto para abrir no navegador do celular:</span>
+        <span class="lbl">Link direto da aplicação na nuvem:</span>
         <a id="mobile-link" href="#" target="_blank" class="mobile-url"></a>
       </div>
     </div>
