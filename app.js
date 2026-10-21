@@ -284,8 +284,28 @@ async function syncWithSupabase() {
     let localChanged = false;
 
     if (Array.isArray(cloudRows)) {
+      // 2.1 Verifica se houve reset geral disparado pelo administrador
+      const resetRow = cloudRows.find(r => r.tombamento === '__GLOBAL_RESET__');
+      if (resetRow) {
+        const resetTs = Number(resetRow.ts) || 0;
+        if (resetTs > (S.lastResetTs || 0)) {
+          S.st = {};
+          S.extras = [];
+          S.log = [];
+          S.lastResetTs = resetTs;
+          outboxQueue = [];
+          persistOutbox();
+          localStorage.setItem(KEY, JSON.stringify(S));
+          refresh();
+          toast('🔄 O banco de dados foi zerado pelo administrador.');
+          updateSyncStatus('live', '🟢 Nuvem Ativa (Resetada)');
+          return;
+        }
+      }
+
       for (const row of cloudRows) {
         const t = row.tombamento;
+        if (t === '__GLOBAL_RESET__') continue;
         const cloudTs = Number(row.ts) || 0;
         const localTs = Number(S.st[t]?.ts) || 0;
 
@@ -1269,11 +1289,77 @@ $('#rs').onchange = e => {
   });
 };
 $('#reset').onclick = () => {
-  if (confirm('Apagar TODO o progresso da conferência?') && confirm('Tem certeza? Faça backup antes.')) {
+  if (confirm('Apagar os dados de conferência SOMENTE deste aparelho?') && confirm('Tem certeza? Faça backup antes.')) {
     localStorage.removeItem(KEY);
     location.reload();
   }
 };
+
+/* ================= Reset Geral do Banco na Nuvem (Todos os Aparelhos) ================= */
+async function resetCloud() {
+  vibrate([100, 50, 100]);
+  const c = prompt('⚠️ ATENÇÃO: Isso apagará TODOS os dados de conferência e sobras na NUVEM e em TODOS os celulares da equipe!\n\nUm backup de segurança (.json) será baixado agora antes de zerar.\n\nPara confirmar a exclusão de tudo, digite ZERAR abaixo:');
+  if (!c || c.trim().toUpperCase() !== 'ZERAR') {
+    return toast('Operação cancelada');
+  }
+
+  // 1. Download de segurança preventivo
+  dl(`backup_seguranca_pre_reset_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(S), 'application/json');
+
+  toast('⏳ Zerando banco de dados de todos os aparelhos...');
+  updateSyncStatus('syncing', '🔄 Zerando nuvem...');
+
+  const now = Date.now();
+  try {
+    // 2. Deleta todos os registros de conferência da nuvem
+    await fetch(`${SUPABASE_URL}/rest/v1/conferencia?tombamento=neq.__GLOBAL_RESET__`, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+
+    // 3. Deleta todas as sobras da nuvem
+    await fetch(`${SUPABASE_URL}/rest/v1/sobras?id=gt.-1`, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+
+    // 4. Grava o marcador de reset na nuvem para propagar aos outros celulares
+    await fetch(`${SUPABASE_URL}/rest/v1/conferencia?on_conflict=tombamento`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify([{
+        tombamento: '__GLOBAL_RESET__',
+        status: 'R',
+        local: '',
+        obs: 'Reset geral executado',
+        responsavel: S.resp || 'ADMIN',
+        ts: now
+      }])
+    });
+
+    // 5. Limpa o estado local
+    S.st = {};
+    S.extras = [];
+    S.log = [];
+    S.lastResetTs = now;
+    outboxQueue = [];
+    persistOutbox();
+    localStorage.setItem(KEY, JSON.stringify(S));
+    refresh();
+    updateSyncStatus('live', '🟢 Nuvem Ativa (Resetada)');
+    toast('✅ Banco de dados zerado com sucesso para todos!');
+  } catch (err) {
+    console.error(err);
+    toast('Erro ao zerar: ' + err.message);
+  }
+}
+const btnResetCloud = $('#reset-cloud');
+if (btnResetCloud) btnResetCloud.onclick = resetCloud;
 
 /* ================= Render Principal ================= */
 function refresh() {
