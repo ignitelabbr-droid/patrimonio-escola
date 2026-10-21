@@ -72,23 +72,38 @@
     <!-- CONFERÊNCIA -->
     <section id="view-conf" class="view">
       <div class="conf-grid">
-        <div class="card scan-card">
-          <div class="scan-header-row">
-            <label for="scan" class="lbl"><b>⌨️ Digitar número ou bipar plaqueta:</b></label>
-            <span class="muted" style="font-size:12px">Ex: digite <b>105024</b> ou <b>000105024</b> e clique em <b>Dar Baixa</b></span>
+        <div class="card scan-card mobile-optimized">
+          <div class="scan-top-actions">
+            <button class="btn primary glow lg-btn" id="cam-btn" type="button">
+              <span class="btn-ic">📷</span>
+              <div class="btn-tx">
+                <b>Abrir Câmera para Bipar</b>
+                <small>Lê QR Code e Código de Barras da plaqueta</small>
+              </div>
+            </button>
           </div>
-          <div class="scan-input">
-            <span class="scan-ico">🔢</span>
-            <input id="scan" type="text" inputmode="numeric" placeholder="Digite o nº do patrimônio (ex: 105024)" autocomplete="off">
-            <button class="btn primary glow" id="btn-submit-scan" type="button">⚡ Dar Baixa</button>
-            <button class="btn" id="cam-btn" type="button">📷 Câmera</button>
+
+          <div class="scan-divider"><span>OU DIGITE O NÚMERO DA PLAQUETA</span></div>
+
+          <div class="scan-input-block">
+            <div class="scan-field-wrap">
+              <span class="scan-ico">🔢</span>
+              <input id="scan" type="text" inputmode="numeric" placeholder="Ex: 105024" autocomplete="off">
+            </div>
+            <button class="btn ok-btn" id="btn-submit-scan" type="button">⚡ Dar Baixa</button>
           </div>
-          <div class="scanrow">
-            <div class="field grow"><label for="curloc">📍 Local atual (sala)</label>
-              <input id="curloc" list="locs" placeholder="Ex.: Sala 3, Cozinha, Secretaria…"><datalist id="locs"></datalist></div>
-            <div class="field"><label>Ao ler/digitar, marcar como</label>
-              <div class="seg" data-mode-seg><button data-m="L">✅ Localizado</button><button data-m="I">⚠️ Inservível</button></div></div>
+
+          <div class="scanrow compact-row">
+            <div class="field grow">
+              <label for="curloc">📍 Sala onde você está:</label>
+              <input id="curloc" list="locs" placeholder="Ex: Sala 01, Cozinha, Secretaria…"><datalist id="locs"></datalist>
+            </div>
+            <div class="field">
+              <label>Status ao conferir:</label>
+              <div class="seg" data-mode-seg><button data-m="L">✅ Localizado</button><button data-m="I">⚠️ Inservível</button></div>
+            </div>
           </div>
+
           <div id="last" class="last"></div>
         </div>
         <div class="card log-card">
@@ -208,27 +223,50 @@
   <div class="actions end"><button class="btn ghost" value="cancel">Cancelar</button><button class="btn primary" value="ok" id="d-ok">Salvar</button></div>
 </form></dialog>
 
-<!-- Câmera -->
-<dialog id="camdlg" class="cam">
-  <div class="card-h"><h3>📷 Leitor de Câmera / Código de Barras</h3><button class="x" id="camclose" title="Fechar">✕</button></div>
-  <div class="reader-wrap"><div id="reader"></div><div class="scanline"></div></div>
+<!-- Câmera Scanner Imersiva -->
+<dialog id="camdlg" class="cam mobile-fullscreen-cam">
+  <div class="cam-topbar">
+    <div class="cam-title">
+      <span class="cam-dot"></span>
+      <h3>Leitor de Patrimônio</h3>
+    </div>
+    <button class="btn sm ghost cam-close-btn" id="camclose" title="Fechar câmera">✕ Fechar</button>
+  </div>
 
-  <div class="cam-manual-box">
-    <label for="cam-scan-input" class="lbl"><b>⌨️ Digitar número:</b> se preferir, digite a plaqueta e clique em Dar Baixa:</label>
-    <div class="scan-input compact">
-      <span class="scan-ico">🔢</span>
-      <input id="cam-scan-input" type="text" inputmode="numeric" placeholder="Ex: 105024" autocomplete="off">
-      <button class="btn primary glow sm" id="btn-cam-manual" type="button">⚡ Dar Baixa</button>
+  <div class="reader-wrap">
+    <div id="reader"></div>
+    <div class="scanner-hud">
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+      <div class="scanline"></div>
     </div>
   </div>
 
-  <div class="cam-opts">
-    <select id="camsel" hidden></select>
-    <div class="seg" data-mode-seg><button data-m="L">✅ Localizado</button><button data-m="I">⚠️ Inservível</button></div>
+  <div class="cam-bottom-panel">
+    <div class="cam-loc-badge">
+      <span>📍 Sala atual:</span> <b id="camloc">Não definida</b>
+    </div>
+    <div id="camfeed" class="feed">Aponte para o código de barras ou QR Code da plaqueta.</div>
+    
+    <div class="cam-manual-box">
+      <div class="scan-input compact">
+        <span class="scan-ico">🔢</span>
+        <input id="cam-scan-input" type="text" inputmode="numeric" placeholder="Ou digite (ex: 105024)" autocomplete="off">
+        <button class="btn ok-btn sm" id="btn-cam-manual" type="button">⚡ Baixar</button>
+      </div>
+    </div>
+
+    <div class="cam-footer-controls">
+      <div class="seg" data-mode-seg>
+        <button data-m="L">✅ Marcar Localizado</button>
+        <button data-m="I">⚠️ Marcar Inservível</button>
+      </div>
+      <select id="camsel" hidden></select>
+    </div>
+    <div class="cam-count" id="camcount"></div>
   </div>
-  <div class="cam-loc">📍 Local: <b id="camloc">—</b> <span class="muted">(altere na tela de Conferência)</span></div>
-  <div id="camfeed" class="feed">Aponte para o código de barras ou QR Code da plaqueta.</div>
-  <div class="cam-count" id="camcount"></div>
 </dialog>
 
 <!-- QR individual -->
