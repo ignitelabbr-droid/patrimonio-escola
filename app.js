@@ -24,8 +24,8 @@ const hhmm = ts => new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', m
 
 document.documentElement.dataset.theme = S.theme;
 
-/* ================= Áudio Profissional do Leitor de Código de Barras ================= */
-let actx;
+/* ================= Áudio Potente do Leitor de Código de Barras ================= */
+let actx, compressor;
 function unlockAudio() {
   if (!actx) {
     try {
@@ -37,66 +37,115 @@ function unlockAudio() {
     actx.resume().catch(() => {});
   }
 }
-window.addEventListener('touchstart', unlockAudio, { passive: true });
-window.addEventListener('click', unlockAudio, { passive: true });
+['touchstart', 'pointerdown', 'click', 'keydown'].forEach(ev => {
+  window.addEventListener(ev, unlockAudio, { passive: true });
+});
+
+function getAudioDest() {
+  if (!compressor && actx) {
+    try {
+      compressor = actx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-14, actx.currentTime);
+      compressor.knee.setValueAtTime(8, actx.currentTime);
+      compressor.ratio.setValueAtTime(14, actx.currentTime);
+      compressor.attack.setValueAtTime(0.002, actx.currentTime);
+      compressor.release.setValueAtTime(0.06, actx.currentTime);
+      compressor.connect(actx.destination);
+    } catch(e) {
+      return actx.destination;
+    }
+  }
+  return compressor || actx.destination;
+}
 
 function playScanSound(type = 'success') {
   try {
     unlockAudio();
     if (!actx) return;
     const now = actx.currentTime;
+    const dest = getAudioDest();
 
     if (type === 'success') {
-      // BIP PROFISSIONAL DE SCANNER (dois tons harmônicos nítidos: 1850Hz -> 2500Hz)
+      // BIP DE LEITOR PROFISSIONAL COM VOLUME MÁXIMO E HARMONICOS POTENTES
+      // 2100Hz -> 2850Hz: Frequência de ressonância ideal de alto-falantes de celular
+      const osc1 = actx.createOscillator();
+      const osc2 = actx.createOscillator();
+      const osc3 = actx.createOscillator();
+      const gain = actx.createGain();
+
+      osc1.type = 'triangle';
+      osc1.frequency.setValueAtTime(2100, now);
+      osc1.frequency.exponentialRampToValueAtTime(2850, now + 0.045);
+
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(2850, now + 0.045);
+
+      osc3.type = 'square';
+      osc3.frequency.setValueAtTime(2850, now + 0.045);
+
+      gain.gain.setValueAtTime(0.96, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      osc3.connect(gain);
+      gain.connect(dest);
+
+      osc1.start(now);
+      osc1.stop(now + 0.045);
+      osc2.start(now + 0.045);
+      osc2.stop(now + 0.16);
+      osc3.start(now + 0.045);
+      osc3.stop(now + 0.16);
+    } else if (type === 'duplicate') {
+      // Duplo bip alto para item repetido (880Hz)
+      [0, 0.09].forEach(delay => {
+        const osc = actx.createOscillator();
+        const oscHarm = actx.createOscillator();
+        const gain = actx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(880, now + delay);
+        oscHarm.type = 'sine';
+        oscHarm.frequency.setValueAtTime(1760, now + delay);
+
+        gain.gain.setValueAtTime(0.88, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.07);
+
+        osc.connect(gain);
+        oscHarm.connect(gain);
+        gain.connect(dest);
+
+        osc.start(now + delay);
+        osc.stop(now + delay + 0.07);
+        oscHarm.start(now + delay);
+        oscHarm.stop(now + delay + 0.07);
+      });
+    } else if (type === 'error') {
+      // Buzzer grave alto para código não cadastrado
       const osc1 = actx.createOscillator();
       const osc2 = actx.createOscillator();
       const gain = actx.createGain();
 
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(1850, now);
-      osc1.frequency.exponentialRampToValueAtTime(2500, now + 0.04);
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(240, now);
+      osc1.frequency.linearRampToValueAtTime(150, now + 0.24);
 
-      osc2.type = 'triangle';
-      osc2.frequency.setValueAtTime(2500, now + 0.04);
+      osc2.type = 'square';
+      osc2.frequency.setValueAtTime(120, now);
+      osc2.frequency.linearRampToValueAtTime(75, now + 0.24);
 
-      gain.gain.setValueAtTime(0.44, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+      gain.gain.setValueAtTime(0.92, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
 
       osc1.connect(gain);
       osc2.connect(gain);
-      gain.connect(actx.destination);
+      gain.connect(dest);
 
       osc1.start(now);
-      osc1.stop(now + 0.04);
-      osc2.start(now + 0.04);
-      osc2.stop(now + 0.13);
-    } else if (type === 'duplicate') {
-      // Duplo bip para avisar que já foi conferido
-      [0, 0.09].forEach(delay => {
-        const osc = actx.createOscillator();
-        const gain = actx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(750, now + delay);
-        gain.gain.setValueAtTime(0.32, now + delay);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.06);
-        osc.connect(gain);
-        gain.connect(actx.destination);
-        osc.start(now + delay);
-        osc.stop(now + delay + 0.06);
-      });
-    } else if (type === 'error') {
-      // Tom grave de erro para item não cadastrado
-      const osc = actx.createOscillator();
-      const gain = actx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(230, now);
-      osc.frequency.linearRampToValueAtTime(160, now + 0.22);
-      gain.gain.setValueAtTime(0.35, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
-      osc.connect(gain);
-      gain.connect(actx.destination);
-      osc.start(now);
-      osc.stop(now + 0.22);
+      osc1.stop(now + 0.24);
+      osc2.start(now + 0.24);
+      osc2.stop(now + 0.24);
     }
   } catch (e) {
     console.warn('Audio play error:', e);
