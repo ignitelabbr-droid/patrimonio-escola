@@ -1,4 +1,4 @@
-const CACHE_NAME = 'patrimonio-cache-v7';
+const CACHE_NAME = 'patrimonio-cache-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,8 @@ const ASSETS = [
   './lib/tesseract/worker.min.js',
   './lib/tesseract/tesseract-core.wasm.js',
   './lib/tesseract/tesseract-core-simd.wasm.js',
+  './lib/tesseract/tesseract-core-lstm.wasm.js',
+  './lib/tesseract/tesseract-core-simd-lstm.wasm.js',
   './lib/tesseract/eng.traineddata.gz'
 ];
 

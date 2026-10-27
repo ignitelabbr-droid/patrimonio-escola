@@ -935,29 +935,28 @@ async function initOcrWorker() {
   if (ocrWorkerReady || ocrInitializing || !window.Tesseract) return;
   ocrInitializing = true;
   try {
-    // Tenta inicializar com os arquivos locais offline
+    const base = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
     ocrWorker = await Tesseract.createWorker('eng', 1, {
-      workerPath: './lib/tesseract/worker.min.js',
-      corePath: './lib/tesseract/tesseract-core.wasm.js',
-      langPath: './lib/tesseract/'
+      workerPath: base + 'lib/tesseract/worker.min.js',
+      corePath: base + 'lib/tesseract',
+      langPath: base + 'lib/tesseract'
     });
     await ocrWorker.setParameters({
       tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '6'
+      tessedit_pageseg_mode: '7'
     });
     ocrWorkerReady = true;
-    console.log('✅ [OCR] Motor de leitura automática de placas metálicas pronto!');
+    console.log('✅ [OCR] Motor de leitura de placas metálicas pronto!');
   } catch (err) {
-    console.warn('Fallback OCR local:', err);
+    console.warn('Fallback OCR local falhou:', err);
     try {
-      // Fallback padrão se houver alguma restrição de caminho
       ocrWorker = await Tesseract.createWorker('eng', 1);
       await ocrWorker.setParameters({
         tessedit_char_whitelist: '0123456789',
-        tessedit_pageseg_mode: '6'
+        tessedit_pageseg_mode: '7'
       });
       ocrWorkerReady = true;
-      console.log('✅ [OCR] Motor de leitura automática pronto (online fallback)!');
+      console.log('✅ [OCR] Motor de leitura pronto via fallback online!');
     } catch (e2) {
       console.error('Falha ao inicializar OCR:', e2);
     }
@@ -988,7 +987,7 @@ function startAutoOcrLoop() {
     try {
       await scanFrameForPlateNumber(video);
     } catch (e) {
-      // Silencioso para não interromper o loop de vídeo
+      // Silencioso
     } finally {
       ocrBusy = false;
     }
@@ -1005,18 +1004,60 @@ function stopAutoOcrLoop() {
   ocrCandidateCount = 0;
 }
 
+// Limiarização ótima de Otsu para destacar os dígitos prateados na tarja preta
+function applyOtsuThreshold(ctx, width, height) {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const d = imgData.data;
+  const numPixels = width * height;
+
+  const hist = new Int32Array(256);
+  for (let i = 0; i < d.length; i += 4) {
+    const g = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000 | 0;
+    hist[g]++;
+  }
+
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+
+  let sumB = 0, wB = 0, wF = 0, varMax = 0, threshold = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    wF = numPixels - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const varBetween = wB * wF * (mB - mF) * (mB - mF);
+    if (varBetween > varMax) {
+      varMax = varBetween;
+      threshold = t;
+    }
+  }
+
+  for (let i = 0; i < d.length; i += 4) {
+    const g = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000 | 0;
+    // Binariza: dígitos viram preto (0), fundo escuro da tarja vira branco (255)
+    const val = g > threshold ? 0 : 255;
+    d[i] = val;
+    d[i+1] = val;
+    d[i+2] = val;
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
 async function scanFrameForPlateNumber(video) {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   if (!vw || !vh) return;
 
-  // Foca no retângulo central do HUD (onde o usuário enquadra a plaqueta)
-  const cropW = Math.floor(vw * 0.72);
+  // Foca no retângulo central do visor HUD onde a placa é apontada
+  const cropW = Math.floor(vw * 0.70);
   const cropH = Math.floor(vh * 0.45);
   const cropX = Math.floor((vw - cropW) / 2);
   const cropY = Math.floor((vh - cropH) / 2);
 
-  const targetW = 480;
+  const targetW = 420;
   const targetH = Math.round((cropH / cropW) * targetW);
 
   ocrCanvas.width = targetW;
@@ -1024,48 +1065,29 @@ async function scanFrameForPlateNumber(video) {
   const ctx = ocrCanvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
 
-  // Aumenta o contraste para evidenciar os números gravados em preto/prata
-  const imgData = ctx.getImageData(0, 0, targetW, targetH);
-  const d = imgData.data;
-  let minB = 255, maxB = 0;
-  for (let i = 0; i < d.length; i += 4) {
-    const b = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000;
-    if (b < minB) minB = b;
-    if (b > maxB) maxB = b;
-  }
-  const range = (maxB - minB) || 1;
-  for (let i = 0; i < d.length; i += 4) {
-    let b = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000;
-    b = Math.min(255, Math.max(0, ((b - minB) / range) * 255));
-    d[i] = b;
-    d[i+1] = b;
-    d[i+2] = b;
-  }
-  ctx.putImageData(imgData, 0, 0);
-
-  // 1. Caminho ultra-rápido: TextDetector nativo por hardware (se suportado pelo navegador)
+  // 1. Caminho ultra-rápido: TextDetector nativo (se suportado pelo navegador)
   if (window.TextDetector) {
     try {
       const detector = new window.TextDetector();
       const detected = await detector.detect(ocrCanvas);
       for (const item of detected) {
         const m = (item.rawValue || '').match(/\b\d{4,9}\b/);
-        if (m && handleOcrCandidate(m[0], 90)) return;
+        if (m && handleOcrCandidate(m[0], 95)) return;
       }
     } catch (e) {}
   }
 
-  // 2. Caminho universal: Tesseract OCR em Web Worker
+  // 2. Caminho universal: Tesseract OCR com binarização Otsu
   if (ocrWorkerReady && ocrWorker) {
+    applyOtsuThreshold(ctx, targetW, targetH);
     const res = await ocrWorker.recognize(ocrCanvas);
     const text = (res?.data?.text || '').trim();
     const conf = res?.data?.confidence || 0;
 
-    // Busca grupos de 4 a 9 dígitos
     const matches = text.match(/\b\d{4,9}\b/g) || text.match(/\d{4,9}/g);
     if (matches && matches.length > 0) {
       for (const candidate of matches) {
-        if (handleOcrCandidate(candidate, conf)) break;
+        if (handleOcrCandidate(candidate, conf)) return;
       }
     }
   }
