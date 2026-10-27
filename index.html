@@ -91,7 +91,7 @@
               <span class="btn-ic">📷</span>
               <div class="btn-tx">
                 <b>Abrir Câmera para Bipar</b>
-                <small>Lê QR Code e Código de Barras da plaqueta</small>
+                <small>Lê Código de Barras e Placas Metálicas gravadas (Automático)</small>
               </div>
             </button>
           </div>
@@ -251,6 +251,9 @@
     <div id="reader"></div>
     <div id="scanner-flash" class="scanner-flash"></div>
     <div class="scanner-hud">
+      <div class="scanner-dual-tag">
+        <span class="tag-badge">⚡ Auto: Código de Barras + Placa Metálica</span>
+      </div>
       <div class="corner tl"></div>
       <div class="corner tr"></div>
       <div class="corner bl"></div>
@@ -281,7 +284,7 @@
     <div class="cam-loc-badge">
       <span>📍 Sala atual:</span> <b id="camloc">Não definida</b>
     </div>
-    <div id="camfeed" class="feed">Aponte a câmera para o código de barras ou QR Code da plaqueta.</div>
+    <div id="camfeed" class="feed">Aponte a câmera para a plaqueta (lê Código de Barras e Placas Metálicas automaticamente).</div>
     
     <div class="cam-manual-box">
       <div class="scan-input compact">
@@ -363,6 +366,7 @@
 
 <script src="lib/html5-qrcode.min.js"></script>
 <script src="lib/qrcode.js"></script>
+<script src="lib/tesseract/tesseract.min.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script>

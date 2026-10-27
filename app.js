@@ -917,9 +917,195 @@ function renderLog() {
 }
 $('#clearlog').onclick = () => { S.log = []; save(); renderLog(); };
 
-/* ================= Câmera Imersiva ================= */
+/* ================= Câmera Imersiva com Reconhecimento Duplo Automático ================= */
 let qr = null, lastCode = '', lastTime = 0, camSession = 0;
 const camFeed = (h, c = '') => { const f = $('#camfeed'); f.className = 'feed ' + c; f.innerHTML = h; };
+
+/* ================= Motor OCR Automático para Placas Metálicas Gravadas ================= */
+let ocrWorker = null;
+let ocrWorkerReady = false;
+let ocrInitializing = false;
+let ocrInterval = null;
+let ocrBusy = false;
+let ocrCanvas = null;
+let ocrCandidate = '';
+let ocrCandidateCount = 0;
+
+async function initOcrWorker() {
+  if (ocrWorkerReady || ocrInitializing || !window.Tesseract) return;
+  ocrInitializing = true;
+  try {
+    // Tenta inicializar com os arquivos locais offline
+    ocrWorker = await Tesseract.createWorker('eng', 1, {
+      workerPath: './lib/tesseract/worker.min.js',
+      corePath: './lib/tesseract/tesseract-core.wasm.js',
+      langPath: './lib/tesseract/'
+    });
+    await ocrWorker.setParameters({
+      tessedit_char_whitelist: '0123456789',
+      tessedit_pageseg_mode: '6'
+    });
+    ocrWorkerReady = true;
+    console.log('✅ [OCR] Motor de leitura automática de placas metálicas pronto!');
+  } catch (err) {
+    console.warn('Fallback OCR local:', err);
+    try {
+      // Fallback padrão se houver alguma restrição de caminho
+      ocrWorker = await Tesseract.createWorker('eng', 1);
+      await ocrWorker.setParameters({
+        tessedit_char_whitelist: '0123456789',
+        tessedit_pageseg_mode: '6'
+      });
+      ocrWorkerReady = true;
+      console.log('✅ [OCR] Motor de leitura automática pronto (online fallback)!');
+    } catch (e2) {
+      console.error('Falha ao inicializar OCR:', e2);
+    }
+  } finally {
+    ocrInitializing = false;
+  }
+}
+
+function startAutoOcrLoop() {
+  stopAutoOcrLoop();
+  if (!ocrCanvas) {
+    ocrCanvas = document.createElement('canvas');
+  }
+  if (!ocrWorkerReady && !ocrInitializing) {
+    initOcrWorker();
+  }
+
+  ocrInterval = setInterval(async () => {
+    if (ocrBusy) return;
+    if (!qr || !qr.isScanning) return;
+    const video = document.querySelector('#reader video');
+    if (!video || video.readyState < 2 || !video.videoWidth) return;
+
+    // Se acabou de bipar nos últimos 2.2 segundos, aguarda para não duplicar
+    if (Date.now() - lastTime < 2200) return;
+
+    ocrBusy = true;
+    try {
+      await scanFrameForPlateNumber(video);
+    } catch (e) {
+      // Silencioso para não interromper o loop de vídeo
+    } finally {
+      ocrBusy = false;
+    }
+  }, 450);
+}
+
+function stopAutoOcrLoop() {
+  if (ocrInterval) {
+    clearInterval(ocrInterval);
+    ocrInterval = null;
+  }
+  ocrBusy = false;
+  ocrCandidate = '';
+  ocrCandidateCount = 0;
+}
+
+async function scanFrameForPlateNumber(video) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return;
+
+  // Foca no retângulo central do HUD (onde o usuário enquadra a plaqueta)
+  const cropW = Math.floor(vw * 0.72);
+  const cropH = Math.floor(vh * 0.45);
+  const cropX = Math.floor((vw - cropW) / 2);
+  const cropY = Math.floor((vh - cropH) / 2);
+
+  const targetW = 480;
+  const targetH = Math.round((cropH / cropW) * targetW);
+
+  ocrCanvas.width = targetW;
+  ocrCanvas.height = targetH;
+  const ctx = ocrCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+
+  // Aumenta o contraste para evidenciar os números gravados em preto/prata
+  const imgData = ctx.getImageData(0, 0, targetW, targetH);
+  const d = imgData.data;
+  let minB = 255, maxB = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const b = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000;
+    if (b < minB) minB = b;
+    if (b > maxB) maxB = b;
+  }
+  const range = (maxB - minB) || 1;
+  for (let i = 0; i < d.length; i += 4) {
+    let b = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000;
+    b = Math.min(255, Math.max(0, ((b - minB) / range) * 255));
+    d[i] = b;
+    d[i+1] = b;
+    d[i+2] = b;
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // 1. Caminho ultra-rápido: TextDetector nativo por hardware (se suportado pelo navegador)
+  if (window.TextDetector) {
+    try {
+      const detector = new window.TextDetector();
+      const detected = await detector.detect(ocrCanvas);
+      for (const item of detected) {
+        const m = (item.rawValue || '').match(/\b\d{4,9}\b/);
+        if (m && handleOcrCandidate(m[0], 90)) return;
+      }
+    } catch (e) {}
+  }
+
+  // 2. Caminho universal: Tesseract OCR em Web Worker
+  if (ocrWorkerReady && ocrWorker) {
+    const res = await ocrWorker.recognize(ocrCanvas);
+    const text = (res?.data?.text || '').trim();
+    const conf = res?.data?.confidence || 0;
+
+    // Busca grupos de 4 a 9 dígitos
+    const matches = text.match(/\b\d{4,9}\b/g) || text.match(/\d{4,9}/g);
+    if (matches && matches.length > 0) {
+      for (const candidate of matches) {
+        if (handleOcrCandidate(candidate, conf)) break;
+      }
+    }
+  }
+}
+
+function handleOcrCandidate(rawDigits, conf) {
+  const clean = String(rawDigits || '').replace(/\D/g, '');
+  if (clean.length < 4 || clean.length > 9) return false;
+
+  const now = Date.now();
+  if (clean === lastCode && now - lastTime < 2400) return false;
+
+  const padded = clean.padStart(9, '0');
+  const inInventory = !!BYT[padded];
+
+  // Se o patrimônio consta no inventário da escola: disparo imediato no 1º frame!
+  if (inInventory) {
+    console.log(`🎯 [Auto-OCR] Placa metálica reconhecida: ${clean} (${conf}%)`);
+    onCode(clean);
+    ocrCandidate = '';
+    ocrCandidateCount = 0;
+    return true;
+  }
+
+  // Se não consta no inventário (bem extra/sobra): exige 2 leituras consecutivas para evitar ruídos
+  if (clean === ocrCandidate) {
+    ocrCandidateCount++;
+    if (ocrCandidateCount >= 2 || conf >= 75) {
+      console.log(`🎯 [Auto-OCR] Placa confirmada em 2 leituras: ${clean}`);
+      onCode(clean);
+      ocrCandidate = '';
+      ocrCandidateCount = 0;
+      return true;
+    }
+  } else {
+    ocrCandidate = clean;
+    ocrCandidateCount = 1;
+  }
+  return false;
+}
 
 async function openCam() {
   unlockAudio();
@@ -931,7 +1117,7 @@ async function openCam() {
   $('#cam-scan-input').value = '';
   const popCard = $('#cam-scanned-card');
   if (popCard) popCard.style.display = 'none';
-  camFeed('Aponte a câmera para o código de barras ou QR Code da plaqueta.');
+  camFeed('Aponte a câmera para a plaqueta (lê Código de Barras e Placas Metálicas automaticamente).');
   $('#camdlg').showModal();
 
   if (!window.Html5Qrcode) {
@@ -962,12 +1148,15 @@ async function openCam() {
 
 async function startCam(id) {
   if (qr.isScanning) await qr.stop();
+  stopAutoOcrLoop();
   await qr.start(
     id || { facingMode: 'environment' },
     { fps: 15, qrbox: (w, h) => ({ width: Math.floor(w * 0.88), height: Math.floor(Math.min(h * 0.6, 220)) }) },
     onCode,
     () => {}
   );
+  // Inicia a leitura óptica automática paralela para placas metálicas
+  startAutoOcrLoop();
 }
 
 function onCode(text) {
@@ -988,6 +1177,7 @@ function onCode(text) {
 
 async function closeCam() {
   vibrate(30);
+  stopAutoOcrLoop();
   try { if (qr?.isScanning) await qr.stop(); } catch (e) {}
   $('#camdlg').close();
   if (camSession) toast(`✅ ${camSession} item(ns) conferido(s) pela câmera`);
@@ -1390,6 +1580,11 @@ renderMode();
 // Se for celular, abre direto na aba de Conferência
 const initialView = matchMedia('(max-width:900px)').matches ? 'conf' : 'dash';
 go(initialView);
+
+// Pré-aquece o leitor OCR em segundo plano para resposta instantânea ao abrir a câmera
+if (typeof initOcrWorker === 'function') {
+  setTimeout(initOcrWorker, 1200);
+}
 
 // Atualiza renderização ao rotacionar tela
 let resizeTimer;

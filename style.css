@@ -238,6 +238,8 @@ dialog.cam{width:min(560px,96vw);padding:18px}
 
 /* HUD Visor de Mira */
 .scanner-hud{position:absolute;inset:20px;pointer-events:none;z-index:2}
+.scanner-dual-tag{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:4;pointer-events:none}
+.scanner-dual-tag .tag-badge{background:rgba(10,15,31,.88);border:1px solid rgba(52,211,153,.55);color:#6ee7b7;font-size:.73rem;font-weight:600;padding:4px 12px;border-radius:999px;backdrop-filter:blur(8px);box-shadow:0 4px 14px rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;white-space:nowrap;letter-spacing:.3px}
 .corner{position:absolute;width:24px;height:24px;border:3px solid var(--ac2);box-shadow:0 0 10px rgba(34,211,238,.6)}
 .corner.tl{top:0;left:0;border-right:0;border-bottom:0;border-top-left-radius:12px}
 .corner.tr{top:0;right:0;border-left:0;border-bottom:0;border-top-right-radius:12px}

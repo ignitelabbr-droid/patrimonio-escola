@@ -1,4 +1,4 @@
-const CACHE_NAME = 'patrimonio-cache-v6';
+const CACHE_NAME = 'patrimonio-cache-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,12 @@ const ASSETS = [
   './icon-192.png',
   './icon-512.png',
   './lib/html5-qrcode.min.js',
-  './lib/qrcode.js'
+  './lib/qrcode.js',
+  './lib/tesseract/tesseract.min.js',
+  './lib/tesseract/worker.min.js',
+  './lib/tesseract/tesseract-core.wasm.js',
+  './lib/tesseract/tesseract-core-simd.wasm.js',
+  './lib/tesseract/eng.traineddata.gz'
 ];
 
 self.addEventListener('install', e => {
