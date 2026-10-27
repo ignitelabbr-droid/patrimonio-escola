@@ -1004,7 +1004,79 @@ function stopAutoOcrLoop() {
   ocrCandidateCount = 0;
 }
 
-// Limiarização ótima de Otsu para destacar os dígitos prateados na tarja preta
+// Localizador de componentes conexos para encontrar a tarja preta da placa em tempo real (< 5ms)
+function findDarkBoxes(ctx, width, height) {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const d = imgData.data;
+
+  // 1. Cria máscara de pixels escuros (< 80)
+  const mask = new Uint8Array(width * height);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    const g = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000 | 0;
+    if (g < 82) mask[p] = 1;
+  }
+
+  // 2. Busca componentes conexos por fila
+  const visited = new Uint8Array(width * height);
+  const boxes = [];
+  const queueX = new Int32Array(width * height);
+  const queueY = new Int32Array(width * height);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (!mask[idx] || visited[idx]) continue;
+
+      let minX = x, maxX = x, minY = y, maxY = y;
+      let count = 0, qHead = 0, qTail = 0;
+
+      queueX[qTail] = x;
+      queueY[qTail] = y;
+      qTail++;
+      visited[idx] = 1;
+
+      while (qHead < qTail) {
+        const cx = queueX[qHead];
+        const cy = queueY[qHead];
+        qHead++;
+        count++;
+
+        if (cx < minX) minX = cx;
+        if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy;
+        if (cy > maxY) maxY = cy;
+
+        const neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
+        for (let n = 0; n < 4; n++) {
+          const nx = neighbors[n][0], ny = neighbors[n][1];
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            const nIdx = ny * width + nx;
+            if (mask[nIdx] && !visited[nIdx]) {
+              visited[nIdx] = 1;
+              queueX[qTail] = nx;
+              queueY[qTail] = ny;
+              qTail++;
+            }
+          }
+        }
+      }
+
+      const bw = maxX - minX + 1;
+      const bh = maxY - minY + 1;
+      const aspect = bw / bh;
+
+      // Geometria característica da tarja de patrimônio: proporção horizontal entre 2.0 e 6.0
+      if (aspect >= 1.8 && aspect <= 6.5 && bw >= 40 && bh >= 10 && count >= 120) {
+        boxes.push({ x: minX, y: minY, w: bw, h: bh, count });
+      }
+    }
+  }
+
+  boxes.sort((a, b) => b.count - a.count);
+  return boxes;
+}
+
+// Limiarização ótima de Otsu
 function applyOtsuThreshold(ctx, width, height) {
   const imgData = ctx.getImageData(0, 0, width, height);
   const d = imgData.data;
@@ -1037,7 +1109,6 @@ function applyOtsuThreshold(ctx, width, height) {
 
   for (let i = 0; i < d.length; i += 4) {
     const g = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000 | 0;
-    // Binariza: dígitos viram preto (0), fundo escuro da tarja vira branco (255)
     const val = g > threshold ? 0 : 255;
     d[i] = val;
     d[i+1] = val;
@@ -1051,21 +1122,18 @@ async function scanFrameForPlateNumber(video) {
   const vh = video.videoHeight;
   if (!vw || !vh) return;
 
-  // Foca no retângulo central do visor HUD onde a placa é apontada
+  // Enquadra a área central do visor (HUD)
   const cropW = Math.floor(vw * 0.70);
-  const cropH = Math.floor(vh * 0.45);
+  const cropH = Math.floor(vh * 0.50);
   const cropX = Math.floor((vw - cropW) / 2);
   const cropY = Math.floor((vh - cropH) / 2);
 
-  const targetW = 420;
-  const targetH = Math.round((cropH / cropW) * targetW);
-
-  ocrCanvas.width = targetW;
-  ocrCanvas.height = targetH;
+  ocrCanvas.width = cropW;
+  ocrCanvas.height = cropH;
   const ctx = ocrCanvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-  // 1. Caminho ultra-rápido: TextDetector nativo (se suportado pelo navegador)
+  // 1. Caminho ultra-rápido: TextDetector nativo por hardware (se suportado pelo navegador)
   if (window.TextDetector) {
     try {
       const detector = new window.TextDetector();
@@ -1077,17 +1145,53 @@ async function scanFrameForPlateNumber(video) {
     } catch (e) {}
   }
 
-  // 2. Caminho universal: Tesseract OCR com binarização Otsu
+  // 2. Motor Tesseract com detecção de tarja e binarização
   if (ocrWorkerReady && ocrWorker) {
-    applyOtsuThreshold(ctx, targetW, targetH);
-    const res = await ocrWorker.recognize(ocrCanvas);
-    const text = (res?.data?.text || '').trim();
-    const conf = res?.data?.confidence || 0;
+    // Localiza a tarja preta da placa dentro do enquadramento
+    const boxes = findDarkBoxes(ctx, cropW, cropH);
 
-    const matches = text.match(/\b\d{4,9}\b/g) || text.match(/\d{4,9}/g);
-    if (matches && matches.length > 0) {
-      for (const candidate of matches) {
-        if (handleOcrCandidate(candidate, conf)) return;
+    if (boxes.length > 0) {
+      // Analisa até as 2 melhores caixas candidatas
+      for (let k = 0; k < Math.min(2, boxes.length); k++) {
+        const b = boxes[k];
+        const padX = 6, padY = 4;
+        const x = Math.max(0, b.x - padX);
+        const y = Math.max(0, b.y - padY);
+        const w = Math.min(cropW - x, b.w + padX * 2);
+        const h = Math.min(cropH - y, b.h + padY * 2);
+
+        const boxCanvas = document.createElement('canvas');
+        boxCanvas.width = w;
+        boxCanvas.height = h;
+        const bCtx = boxCanvas.getContext('2d', { willReadFrequently: true });
+        bCtx.drawImage(ocrCanvas, x, y, w, h, 0, 0, w, h);
+        applyOtsuThreshold(bCtx, w, h);
+
+        const res = await ocrWorker.recognize(boxCanvas);
+        const digits = (res?.data?.text || '').replace(/\D/g, '');
+        const conf = res?.data?.confidence || 0;
+        if (digits.length >= 4 && digits.length <= 9) {
+          if (handleOcrCandidate(digits, conf)) return;
+        }
+      }
+    } else {
+      // Fallback: se a placa for invertida ou sem tarja, foca no centro-inferior
+      const boxCanvas = document.createElement('canvas');
+      const subW = Math.floor(cropW * 0.7);
+      const subH = Math.floor(cropH * 0.45);
+      const subX = Math.floor((cropW - subW) / 2);
+      const subY = Math.floor((cropH - subH) / 2);
+      boxCanvas.width = subW;
+      boxCanvas.height = subH;
+      const bCtx = boxCanvas.getContext('2d', { willReadFrequently: true });
+      bCtx.drawImage(ocrCanvas, subX, subY, subW, subH, 0, 0, subW, subH);
+      applyOtsuThreshold(bCtx, subW, subH);
+
+      const res = await ocrWorker.recognize(boxCanvas);
+      const digits = (res?.data?.text || '').replace(/\D/g, '');
+      const conf = res?.data?.confidence || 0;
+      if (digits.length >= 4 && digits.length <= 9) {
+        if (handleOcrCandidate(digits, conf)) return;
       }
     }
   }
@@ -1100,33 +1204,11 @@ function handleOcrCandidate(rawDigits, conf) {
   const now = Date.now();
   if (clean === lastCode && now - lastTime < 2400) return false;
 
-  const padded = clean.padStart(9, '0');
-  const inInventory = !!BYT[padded];
-
-  // Se o patrimônio consta no inventário da escola: disparo imediato no 1º frame!
-  if (inInventory) {
-    console.log(`🎯 [Auto-OCR] Placa metálica reconhecida: ${clean} (${conf}%)`);
-    onCode(clean);
-    ocrCandidate = '';
-    ocrCandidateCount = 0;
-    return true;
-  }
-
-  // Se não consta no inventário (bem extra/sobra): exige 2 leituras consecutivas para evitar ruídos
-  if (clean === ocrCandidate) {
-    ocrCandidateCount++;
-    if (ocrCandidateCount >= 2 || conf >= 75) {
-      console.log(`🎯 [Auto-OCR] Placa confirmada em 2 leituras: ${clean}`);
-      onCode(clean);
-      ocrCandidate = '';
-      ocrCandidateCount = 0;
-      return true;
-    }
-  } else {
-    ocrCandidate = clean;
-    ocrCandidateCount = 1;
-  }
-  return false;
+  console.log(`🎯 [Auto-OCR] Placa detectada: ${clean} (${conf}%)`);
+  onCode(clean);
+  ocrCandidate = '';
+  ocrCandidateCount = 0;
+  return true;
 }
 
 async function openCam() {
